@@ -97,9 +97,9 @@ def check_updates(server_list: list, package_manager: str) -> list:
   """
   # Check which command we need to run
   if package_manager == "apt":
-    command = r'apt list --upgradeable'
+    command_kwargs = {"command": "apt list --upgradeable", "hide": "both"}
   elif package_manager == "yum":
-    command = r'yum check-updates'
+    command_kwargs = {"command": "yum check-updates", "warn":True, "hide": "stdout"}
   else:
     raise Exception("Unknown package manager")
 
@@ -110,7 +110,7 @@ def check_updates(server_list: list, package_manager: str) -> list:
   for server in server_list:
     # Login and run our command that checks for updates
     try:
-      update_list = fabric.Connection(server).run(command)
+      update_list = fabric.Connection(server).run(**command_kwargs)
     except Exception as exception:
       # TODO: add a more useful failure message, like an email or something
       print(f"Failed to get {package_manager} update list for {server}")
