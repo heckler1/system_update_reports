@@ -227,7 +227,7 @@ def parse_yum_update_list(update_list: list) -> list:
     # Instantiate a list to put our JSON decorated package info into
     decorated_list = []
     # For each update that the system needs
-    for line in update_list:
+    for line in host_info["update_list"]:
       # Split by whitespace
       line = line.split()
 
