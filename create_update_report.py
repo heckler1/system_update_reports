@@ -39,7 +39,7 @@ yum_servers = []
 # FUNCTIONS #
 #############
 
-def apt_update_filter(output):
+def apt_update_filter(output: list) -> list:
   """
   This function takes a list of outputs from "apt list --upgradeable"
   and filters for only the relevant information about which packages need to be upgraded
@@ -56,7 +56,7 @@ def apt_update_filter(output):
 
 ####################################################################################################
 
-def yum_update_filter(output):
+def yum_update_filter(output: list) -> list:
   """
   This function takes a list of outputs from "yum check-updates"
   and filters for only the relevant information about which packages need to be upgraded
@@ -74,7 +74,7 @@ def yum_update_filter(output):
 
 ####################################################################################################
 
-def check_updates(server_list, package_manager):
+def check_updates(server_list: list, package_manager: str) -> list:
   """
   This function logs into each of the given list of servers
   and checks to see if there are any updates required.
@@ -135,7 +135,7 @@ def check_updates(server_list, package_manager):
 
 ####################################################################################################
 
-def parse_apt_update_list(update_list):
+def parse_apt_update_list(update_list: list) -> list:
   """
   Takes the output from check_updates() and puts it into a JSON structure to decorate it.
 
@@ -197,7 +197,7 @@ def parse_apt_update_list(update_list):
 
 ####################################################################################################
 
-def parse_yum_update_list(update_list):
+def parse_yum_update_list(update_list: list) -> list:
   """
   Takes the output from check_updates() and puts it into a JSON structure to decorate it.
 
@@ -261,7 +261,7 @@ def parse_yum_update_list(update_list):
 
 ####################################################################################################
 
-def json_dedupe(update_list):
+def json_dedupe(update_list: list) -> list:
   """
   This function deduplicates our list of update information by host.
   Example input update information:
