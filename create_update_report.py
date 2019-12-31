@@ -28,9 +28,15 @@ email_from_address = os.environ["EMAIL_FROM"]
 email_to_address = os.environ["EMAIL_TO"]
 
 # SMTP config
-smtp_server = ""
-smtp_port = 465
+smtp_server = os.environ["SMTP_SERVER"]
+smtp_username = os.environ["SMTP_USER"]
 smtp_password = os.environ["SMTP_PASS"]
+
+# Set default value for SMTP port
+if "SMTP_PORT" in os.environ:
+  smtp_port = os.environ["SMTP_PORT"]
+else:
+smtp_port = 465
 
 apt_servers = []
 yum_servers = []
@@ -402,7 +408,7 @@ def send_mail(
   context = ssl.create_default_context()
 
   with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
-    server.login(sender, smtp_password)
+    server.login(smtp_username, smtp_password)
     server.sendmail(sender, receiver, message)
 
 
