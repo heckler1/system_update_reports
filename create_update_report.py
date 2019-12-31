@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-This script retreives the output of "yum check-update"
-from S3 and parses it into a JSON report
+This script logs into the given servers, gets a list of what updates are required,
+and parses all the output into a JSON report
 """
 import json
 import os
@@ -40,6 +40,10 @@ yum_servers = []
 #############
 
 def apt_update_filter(output):
+  """
+  This function takes a list of outputs from "apt list --upgradeable"
+  and filters for only the relevant information about which packages need to be upgraded
+  """
   # Remove any messages or other output aside from the package information
   for index, line in reversed(list(enumerate(output))):
     if (re.match(r"^WARNING: apt does not have a stable CLI interface.", line) \
@@ -50,7 +54,13 @@ def apt_update_filter(output):
   # Remove any empty lines
   return list(filter(None, output))
 
+####################################################################################################
+
 def yum_update_filter(output):
+  """
+  This function takes a list of outputs from "yum check-updates"
+  and filters for only the relevant information about which packages need to be upgraded
+  """
   # Remove any messages or other output aside from the package information
   for index, line in reversed(list(enumerate(output))):
     if (re.match(r"^Loaded plugins: ", line) \
@@ -62,7 +72,30 @@ def yum_update_filter(output):
   # Remove any empty lines
   return list(filter(None, output))
 
+####################################################################################################
+
 def check_updates(server_list, package_manager):
+  """
+  This function logs into each of the given list of servers
+  and checks to see if there are any updates required.
+
+  Must be told which package manager the system is running.
+  Supported values are "apt" and "yum"
+
+  Outputs a list of JSON objects like this:
+  {
+    "hostname": "server.example.com",
+    "update_list": update_list
+  }
+  Where "update_list" is a list of lines containing package information
+  from the given package manager's output.
+
+  From yum a line would look like:
+  open-vm-tools.x86_64 10.3.0-2.el7_7.1 updates
+  From apt a line looks like:
+  systemd/bionic-updates 237-3ubuntu10.33 amd64 [upgradable from: 237-3ubuntu10.31]
+  """
+  # Check which command we need to run
   if package_manager == "apt":
     command = r'apt list --upgradeable'
   elif package_manager == "yum":
@@ -70,17 +103,23 @@ def check_updates(server_list, package_manager):
   else:
     raise Exception("Unknown package manager")
 
+  # Initialize our list of required updates
   total_update_list = []
+
+  # For every server in our list
   for server in server_list:
+    # Login and run our command that checks for updates
     try:
       update_list = fabric.Connection(server).run(command)
     except Exception as exception:
+      # TODO: add a more useful failure message, like an email or something
       print(f"Failed to get {package_manager} update list for {server}")
       raise(exception)
-  
+
     # Split by newline
     update_list = update_list.stdout.split("\n")
 
+    # Filter the output to get only the list of required updates
     if package_manager == "apt":
       update_list = apt_update_filter(update_list)
     elif package_manager == "yum":
@@ -88,23 +127,47 @@ def check_updates(server_list, package_manager):
     else:
       raise Exception("Unknown package manager - how did you even get here??")
 
+    # Add the list of updates to our master list, along with the hostname
     total_update_list.append({"hostname": server, "update_list": update_list})
 
-  # Return an un-parsed, un-deduplicated list of updates by system
+  # Return an un-parsed, un-deduplicated list of updates, by system
   return total_update_list
+
+####################################################################################################
 
 def parse_apt_update_list(update_list):
   """
-  Takes the input from check_updates()
+  Takes the output from check_updates() and puts it into a JSON structure to decorate it.
+
+  An object in the inputted list looks something like:
+  {
+    "hostname": "server.example.com",
+    "update_list": [ 'systemd/bionic-updates 237-3ubuntu10.33 amd64 [upgradable from: 237-3ubuntu10.31]' ]
+  }
+
+  Whereas an object in the outputted list would look like:
+  {
+    "hostname": "server.example.com",
+    "update_list": [
+      {
+        "package_name": "systemd",
+        "package_version": "237-3ubuntu10.33",
+        "package_repo": "bionic-updates"
+      }
+    ]
+  }
   """
+  # Initialize a list to store our update info in
   all_updates = []
+
   # Every item in the update list is a set of information about a specific host
   for host_info in update_list:
     # Instantiate a list to put our JSON decorated package info into
     decorated_list = []
+
     # Every item in the host-specific update list is a line of package information
     for line in host_info["update_list"]:
-      # If the line length post-cleanup is not the 4 segments that we're expecting,
+      # If the line length post-cleanup is not the 6 segments that we're expecting,
       # we probably got some sort of error from Apt, so we'll output that directly
       if len(line.split()) != 6:
         decorated_line = {
@@ -117,6 +180,7 @@ def parse_apt_update_list(update_list):
           "package_version": line.split()[1],
           "package_repo": line.split('/')[1].split()[0]
         }
+
       # Add to our list from before
       decorated_list.append(decorated_line)
 
@@ -128,10 +192,37 @@ def parse_apt_update_list(update_list):
       }
     )
 
+  # Return our list of update info for all hosts
   return all_updates
 
+####################################################################################################
+
 def parse_yum_update_list(update_list):
+  """
+  Takes the output from check_updates() and puts it into a JSON structure to decorate it.
+
+  An object in the inputted list looks something like:
+  {
+    "hostname": "server.example.com",
+    "update_list": [ 'open-vm-tools.x86_64 10.3.0-2.el7_7.1 updates' ]
+  }
+
+  Whereas an object in the outputted list would look like:
+  {
+    "hostname": "server.example.com",
+    "update_list": [
+      {
+        "package_name": "open-vm-tools.x86_64",
+        "package_version": "10.3.0-2.el7_7.1",
+        "package_repo": "updates"
+      }
+    ]
+  }
+  """
+  # Initialize a list to store our update info in
   all_updates = []
+
+  # Every item in the update list is a set of information about a specific host
   for host_info in update_list:
     # Instantiate a list to put our JSON decorated package info into
     decorated_list = []
@@ -165,8 +256,10 @@ def parse_yum_update_list(update_list):
       }
     )
 
+  # Return our list of update information for every host
   return all_updates
 
+####################################################################################################
 
 def json_dedupe(update_list):
   """
@@ -301,8 +394,7 @@ def send_mail(
     html: str = None,
     attachments: list = None) -> dict:
   """
-  From: https://stackoverflow.com/questions/42998170/how-to-send-html-text-and-attachment-using-boto3-send-email-or-send-raw-email # pylint: disable=line-too-long
-  Send email to receiver.
+  Send email to receiver via SMTP SSL
   """
   message = create_multipart_message(sender, receiver, title, text, html, attachments)
 
@@ -321,6 +413,7 @@ def send_mail(
 def main():
   """ The main function """
 
+  # Check our servers for updates
   apt_updates = check_updates(apt_servers, "apt")
   yum_updates = check_updates(yum_servers, "yum")
 
@@ -328,11 +421,14 @@ def main():
   apt_updates = parse_apt_update_list(apt_updates)
   yum_updates = parse_yum_update_list(yum_updates)
 
+  # Deduplicate seperately since they won't have updates in common
   deduplicated_apt_updates = json_dedupe(apt_updates)
   deduplicated_yum_updates = json_dedupe(yum_updates)
 
+  # Combine the deduplicated sets
   all_updates = deduplicated_apt_updates + deduplicated_yum_updates
 
+  # Get today's date
   today = datetime.date.today().strftime(r"%Y-%m-%d")
 
   # Build our file name and path that we will save the report to
