@@ -9,6 +9,8 @@ import re
 import itertools
 import collections
 import datetime
+import argparse
+import yaml
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -36,10 +38,20 @@ smtp_password = os.environ["SMTP_PASS"]
 if "SMTP_PORT" in os.environ:
   smtp_port = os.environ["SMTP_PORT"]
 else:
-smtp_port = 465
+  smtp_port = 465
 
-apt_servers = []
-yum_servers = []
+# Get arguments
+parser = argparse.ArgumentParser()
+parser.add_argument(
+  "-c",
+  "--config",
+  required=False,
+  default="./config.yaml",
+  help="Path to the config file. Defaults to ./config.yaml"
+)
+args = parser.parse_args()
+config_file_path = args.config
+
 
 #############
 # FUNCTIONS #
@@ -419,9 +431,13 @@ def send_mail(
 def main():
   """ The main function """
 
+  # Load our config file
+  with open(config_file_path, 'r') as config:
+    config = yaml.safe_load(config)
+
   # Check our servers for updates
-  apt_updates = check_updates(apt_servers, "apt")
-  yum_updates = check_updates(yum_servers, "yum")
+  apt_updates = check_updates(config["apt_servers"], "apt")
+  yum_updates = check_updates(config["yum_servers"], "yum")
 
   # Parse our package manager-specific output into our common structured format
   apt_updates = parse_apt_update_list(apt_updates)
