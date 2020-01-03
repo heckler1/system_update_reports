@@ -92,7 +92,7 @@ def yum_update_filter(output: list) -> list:
 
 ####################################################################################################
 
-def check_updates(server_list: list, package_manager: str) -> list:
+def check_updates(server_list: list, package_manager: str, key_path: str) -> list:
   """
   This function logs into each of the given list of servers
   and checks to see if there are any updates required.
@@ -115,9 +115,9 @@ def check_updates(server_list: list, package_manager: str) -> list:
   """
   # Check which command we need to run
   if package_manager == "apt":
-    command_kwargs = {"command": "apt list --upgradeable", "hide": "both"}
+    command_kwargs = {"command": "apt list --upgradeable", "hide": "both", "key_filename": key_path}
   elif package_manager == "yum":
-    command_kwargs = {"command": "yum check-updates", "warn":True, "hide": "stdout"}
+    command_kwargs = {"command": "yum check-updates", "warn":True, "hide": "stdout", "key_filename": key_path}
   else:
     raise Exception("Unknown package manager")
 
@@ -436,8 +436,8 @@ def main():
     config = yaml.safe_load(config)
 
   # Check our servers for updates
-  apt_updates = check_updates(config["apt_servers"], "apt")
-  yum_updates = check_updates(config["yum_servers"], "yum")
+  apt_updates = check_updates(config["apt_servers"], "apt", config["private_key"])
+  yum_updates = check_updates(config["yum_servers"], "yum", config["private_key"])
 
   # Parse our package manager-specific output into our common structured format
   apt_updates = parse_apt_update_list(apt_updates)
