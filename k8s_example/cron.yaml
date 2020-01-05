@@ -1,0 +1,45 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: system-update-reports
+  namespace: default
+spec:
+  schedule: "0 1 * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: system-update-reports
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          containers:
+            - name: system-update-reports
+              image: system_update_reports
+              args:
+                - -c
+                - /config/config.yaml
+              env:
+                - name: EMAIL_FROM
+                  value: system_update_reports@example.com
+                - name: EMAIL_TO
+                  value: admin@example.com
+                - name: SMTP_SERVER
+                  value: smtp.example.com
+                - name: SMTP_USER
+                  value: system_update_reports@example.com
+                - name: SMTP_PASS
+                  valueFrom:
+                    secretKeyRef:
+                      name: system-update-reports-smtp-password
+                      key: SMTP_PASS
+              volumeMounts:
+                - mountPath: /config
+                  name: system-update-reports-config
+          restartPolicy: OnFailure
+          volumes:
+            - name: system-update-reports-config
+              hostPath:
+                path: /mnt/volume/system-update-reports/config
+  concurrencyPolicy: Replace
