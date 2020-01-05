@@ -1,8 +1,0 @@
-ssh:
-  key_path: "/config/id_rsa"
-  username: example
-apt_servers:
-  - server1
-  - server2
-yum_servers:
-  - server3

@@ -1,0 +1,16 @@
+smtp:
+  server: "smtp.example.com"
+  port: 465
+  username: "system_update_reports"
+  password: "P@ssw0rd"
+email:
+  from_address: "system_update_reports@example.com"
+  to_address: "user@example.com"
+ssh:
+  key_path: "/config/id_rsa"
+  username: "example"
+apt_servers:
+  - "server1"
+  - "server2.example.com"
+yum_servers:
+  - "server3"

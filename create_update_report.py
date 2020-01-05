@@ -19,44 +19,145 @@ import ssl
 import paramiko
 import fabric
 
-##########
-# CONFIG #
-##########
-
-# Get our config from the environment
-# The email address this app will send as
-# Also used as the SMTP username
-email_from_address = os.environ["EMAIL_FROM"]
-# The destination address
-email_to_address = os.environ["EMAIL_TO"]
-
-# SMTP config
-smtp_server = os.environ["SMTP_SERVER"]
-smtp_username = os.environ["SMTP_USER"]
-smtp_password = os.environ["SMTP_PASS"]
-
-# Set default value for SMTP port
-if "SMTP_PORT" in os.environ:
-  smtp_port = os.environ["SMTP_PORT"]
-else:
-  smtp_port = 465
-
-# Get arguments
-parser = argparse.ArgumentParser()
-parser.add_argument(
-  "-c",
-  "--config",
-  required=False,
-  default="./config.yaml",
-  help="Path to the config file. Defaults to ./config.yaml"
-)
-args = parser.parse_args()
-config_file_path = args.config
-
-
 #############
 # FUNCTIONS #
 #############
+
+def get_config(config_file_path: str = None) -> dict:
+  """
+  This function gets our configuration information from multiple sources
+  and compiles it into a single dictionary containing all config values.
+  
+  All config from the environment is prioritized
+  """
+
+  # Load our config file, if given one
+  if config_file_path is not None:
+    with open(config_file_path, 'r') as config:
+      config_file = yaml.safe_load(config)
+  else:
+    # Default to an empty dict to make the rest of the parsing easier
+    config_file = {}
+
+  ## EMAIL SETTINGS ##
+  # The email address this app will send as
+  if "EMAIL_FROM" in os.environ:
+    email_from_address = os.environ["EMAIL_FROM"]
+  elif "email" in config_file:
+    if "from_address" in config_file["email"]:
+      email_from_address = config_file["email"]["from_address"]
+  else:
+    raise Exception("No email from address found")
+
+  # The destination address
+  if "EMAIL_TO" in os.environ:
+    email_to_address = os.environ["EMAIL_TO"]
+  elif "email" in config_file:
+    if "to_address" in config_file["email"]:
+      email_to_address = config_file["email"]["to_address"]
+  else:
+    raise Exception("No email to address found")
+
+  ## SMTP SETTINGS ##
+  # SMTP server
+  if "SMTP_SERVER" in os.environ:
+    smtp_server = os.environ["SMTP_SERVER"]
+  elif "smtp" in config_file:
+    if "server" in config_file["smtp"]:
+      smtp_server = config_file["smtp"]["server"]
+  else:
+    raise Exception("Unable to find SMTP server")
+
+  # SMTP username
+  if "SMTP_USER" in os.environ:
+    smtp_username = os.environ["SMTP_USER"]
+  elif "smtp" in config_file:
+    if "username" in config_file["smtp"]:
+      smtp_username = config_file["smtp"]["username"]
+  else:
+    raise Exception("Unable to find SMTP username")
+
+  # SMTP password
+  if "SMTP_PASS" in os.environ:
+    smtp_password = os.environ["SMTP_PASS"]
+  elif "smtp" in config_file:
+    if "password" in config_file["smtp"]:
+      smtp_password = config_file["smtp"]["password"]
+  else:
+    raise Exception("Unable to find SMTP password")
+
+  # SMTP port
+  if "SMTP_PORT" in os.environ:
+    smtp_port = os.environ["SMTP_PORT"]
+  elif "smtp" in config_file:
+    if "port" in config_file["smtp"]:
+      smtp_port = config_file["smtp"]["port"]
+  else:
+    smtp_port = 465
+
+  ## SSH SETTINGS ##
+  # SSH username
+  if "SSH_USER" in os.environ:
+    ssh_username = os.environ["SSH_USER"]
+  elif "ssh" in config_file:
+    if "username" in config_file["ssh"]:
+      ssh_username = config_file["ssh"]["username"]
+  else:
+    raise Exception("Unable to find SSH username")
+
+  # SSH key path
+  if "SSH_KEY_PATH" in os.environ:
+    ssh_key_path = os.environ["SSH_KEY_PATH"]
+  elif "ssh" in config_file:
+    if "key_path" in config_file["ssh"]:
+      ssh_key_path = config_file["ssh"]["key_path"]
+  else:
+    raise Exception("Unable to find SSH key path")
+
+  ## GET SERVER LISTS ##
+  if "YUM_SERVERS" in os.environ:
+    try:
+      yum_servers = json.loads(os.environ["YUM_SERVERS"])
+    except:
+      raise Exception("Unable to parse YUM_SERVERS environment variable as JSON list")
+  elif "yum_servers" in config_file:
+    yum_servers = config_file["yum_servers"]
+  else:
+    print("No Yum servers found")
+
+  if "APT_SERVERS" in os.environ:
+    try:
+      apt_servers = json.loads(os.environ["APT_SERVERS"])
+    except:
+      raise Exception("Unable to parse APT_SERVERS environment variable as JSON list")
+  elif "apt_servers" in config_file:
+    apt_servers = config_file["apt_servers"]
+  else:
+    print("No Apt servers found")
+
+  # Build out our config dictionary
+  config_dict = {
+    "email": {
+      "email_from_address": email_from_address,
+      "email_to_address": email_to_address
+    },
+    "smtp": {
+      "server": smtp_server,
+      "port": smtp_port,
+      "username": smtp_username,
+      "password": smtp_password
+    },
+    "ssh": {
+      "username": ssh_username,
+      "key_path": ssh_key_path
+    },
+    "apt_servers": apt_servers,
+    "yum_servers": yum_servers
+  }
+
+  return config_dict
+
+####################################################################################################
 
 def apt_update_filter(output: list) -> list:
   """
@@ -436,9 +537,21 @@ def send_mail(
 def main():
   """ The main function """
 
-  # Load our config file
-  with open(config_file_path, 'r') as config:
-    config = yaml.safe_load(config)
+  # Get arguments
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "-c",
+    "--config",
+    required=False,
+    help="Path to the config file"
+  )
+  args = parser.parse_args()
+  
+  # Parse our config
+  if "config" in args:
+    config = get_config(args.config)
+  else:
+    config = get_config()
 
   # Load our private key as an RSA key object
   private_key = paramiko.RSAKey.from_private_key_file(filename=config["ssh"]["key_path"])
@@ -496,8 +609,8 @@ def main():
   email_attachments = [file_path]
 
   message = create_multipart_message(
-    email_from_address,
-    email_to_address,
+    config["email"]["from_address"],
+    config["email"]["to_address"],
     email_title,
     email_text,
     email_body,
@@ -505,7 +618,13 @@ def main():
   )
   
   # Send the email
-  send_mail(smtp_server, smtp_port, smtp_username, smtp_password, message)
+  send_mail(
+    config["smtp"]["server"],
+    config["smtp"]["port"],
+    config["smtp"]["username"],
+    config["smtp"]["password"],
+    message
+  )
 
 if __name__ == "__main__":
   main()
