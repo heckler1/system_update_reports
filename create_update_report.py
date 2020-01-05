@@ -139,8 +139,8 @@ def get_config(config_file_path: str = None) -> dict:
   # Build out our config dictionary
   config_dict = {
     "email": {
-      "email_from_address": email_from_address,
-      "email_to_address": email_to_address
+      "from_address": email_from_address,
+      "to_address": email_to_address
     },
     "smtp": {
       "server": smtp_server,
