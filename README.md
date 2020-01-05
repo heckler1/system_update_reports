@@ -26,6 +26,8 @@ Example dedupliated JSON:
 
 This script is packaged into a Docker container, and is ideally run as a cron job within a Kubernetes cluster for ease of management and scheduling. However, it can be deployed anywhere that Docker runs.
 
+For ease of deployment, example Kubernetes manifests are included in `k8s_example/`. They include a cron job definition, and an associated secret to store the SMTP password in.
+
 ## Configuration
 Configuration can be performed either with environment variables, or with a YAML config file. Environment variables always take precedent over the contents of the config file.
 
