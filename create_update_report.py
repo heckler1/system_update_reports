@@ -410,23 +410,22 @@ def create_multipart_message(
 ####################################################################################################
 
 def send_mail(
-    sender: str,
-    receiver: list,
-    title: str,
-    text: str = None,
-    html: str = None,
-    attachments: list = None) -> dict:
+    smtp_server: str,
+    smtp_port: int,
+    smtp_username: str,
+    smtp_password: str,
+    message: MIMEMultipart
+  ):
   """
   Send email to receiver via SMTP SSL
   """
-  message = create_multipart_message(sender, receiver, title, text, html, attachments)
 
   # Create a secure SSL context
   context = ssl.create_default_context()
 
   with smtplib.SMTP_SSL(smtp_server, smtp_port, context=context) as server:
     server.login(smtp_username, smtp_password)
-    server.sendmail(sender, receiver, message)
+    server.sendmail(message.get("From"), message.get("To"), message.as_string())
 
 
 ########
@@ -473,7 +472,7 @@ def main():
 
   # Build our file name and path that we will save the report to
   file_name = "server_update_report" + today + ".json"
-  file_path = "/Users/stephen/" + file_name
+  file_path = "/tmp/" + file_name
 
   # Write the report to the file
   with open(file_path, 'w') as report_file:
@@ -495,8 +494,7 @@ def main():
   )
   email_attachments = [file_path]
 
-  # Send the email
-  send_mail(
+  message = create_multipart_message(
     email_from_address,
     email_to_address,
     email_title,
@@ -504,6 +502,9 @@ def main():
     email_body,
     email_attachments
   )
+
+  # Send the email
+  send_mail(smtp_server, smtp_port, smtp_username, smtp_password, message)
 
 if __name__ == "__main__":
   main()
