@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-This script logs into the given servers, gets a list of what updates are required,
-and parses all the output into a JSON report
+This script creates a deduplicated JSON report of which updates are due on your systems, and emails it to you. 
+
+See the README for more information, including configuration instructions.
 """
+import argparse
+import collections
+import datetime
+import email
+import itertools
 import json
 import os
 import re
-import itertools
-import collections
-import datetime
-import argparse
-import yaml
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.application import MIMEApplication
 import smtplib
 import ssl
-import paramiko
+
 import fabric
+import paramiko
+import yaml
 
 #############
 # FUNCTIONS #
@@ -25,10 +25,9 @@ import fabric
 
 def get_config(config_file_path: str = None) -> dict:
   """
-  This function gets our configuration information from multiple sources
-  and compiles it into a single dictionary containing all config values.
-  
-  All config from the environment is prioritized
+  This function gets our configuration information from both the environment and, if provided, a config file.
+  It then compiles all the information into a single dictionary containing all config values.
+  All config from the environment is prioritized.
   """
 
   # Load our config file, if given one
@@ -59,7 +58,7 @@ def get_config(config_file_path: str = None) -> dict:
     raise Exception("No email to address found")
 
   ## SMTP SETTINGS ##
-  # SMTP server
+  # SMTP server address
   if "SMTP_SERVER" in os.environ:
     smtp_server = os.environ["SMTP_SERVER"]
   elif "smtp" in config_file:
@@ -164,6 +163,7 @@ def apt_update_filter(output: list) -> list:
   This function takes a list of outputs from "apt list --upgradeable"
   and filters for only the relevant information about which packages need to be upgraded
   """
+
   # Remove any messages or other output aside from the package information
   for index, line in reversed(list(enumerate(output))):
     if (re.match(r"^WARNING: apt does not have a stable CLI interface.", line) \
@@ -181,6 +181,7 @@ def yum_update_filter(output: list) -> list:
   This function takes a list of outputs from "yum check-updates"
   and filters for only the relevant information about which packages need to be upgraded
   """
+
   # Remove any messages or other output aside from the package information
   for index, line in reversed(list(enumerate(output))):
     if (re.match(r"^Loaded plugins: ", line) \
@@ -220,11 +221,21 @@ def check_updates(
   From apt a line looks like:
   systemd/bionic-updates 237-3ubuntu10.33 amd64 [upgradable from: 237-3ubuntu10.31]
   """
+
   # Check which command we need to run
   if package_manager == "apt":
-    command_kwargs = {"command": "apt list --upgradeable", "hide": "both"}
+    command_kwargs = {
+      "command": "apt list --upgradeable",
+      "hide": "both"
+    }
   elif package_manager == "yum":
-    command_kwargs = {"command": "yum check-updates", "warn":True, "hide": "stdout"}
+    command_kwargs = {
+      "command": "yum check-updates",
+      # We have to warn for exit value instead of raise,
+      # because Yum returns exit code 100 if there are pending updates
+      "warn":True,
+      "hide": "stdout"
+    }
   else:
     raise Exception("Unknown package manager")
 
@@ -253,7 +264,12 @@ def check_updates(
       raise Exception("Unknown package manager - how did you even get here??")
 
     # Add the list of updates to our master list, along with the hostname
-    total_update_list.append({"hostname": server, "update_list": update_list})
+    total_update_list.append(
+      {
+        "hostname": server,
+        "update_list": update_list
+      }
+    )
 
   # Return an un-parsed, un-deduplicated list of updates, by system
   return total_update_list
@@ -262,7 +278,7 @@ def check_updates(
 
 def parse_apt_update_list(update_list: list) -> list:
   """
-  Takes the output from check_updates() and puts it into a JSON structure to decorate it.
+  Takes the output from check_updates() and formats it into a JSON structure to decorate it.
 
   An object in the inputted list looks something like:
   {
@@ -282,6 +298,7 @@ def parse_apt_update_list(update_list: list) -> list:
     ]
   }
   """
+
   # Initialize a list to store our update info in
   all_updates = []
 
@@ -306,7 +323,7 @@ def parse_apt_update_list(update_list: list) -> list:
           "package_repo": line.split('/')[1].split()[0]
         }
 
-      # Add to our list from before
+      # Add to our list we initialized before
       decorated_list.append(decorated_line)
 
     # Finally, add the hostname and decorated list of updates to our master list
@@ -344,6 +361,7 @@ def parse_yum_update_list(update_list: list) -> list:
     ]
   }
   """
+
   # Initialize a list to store our update info in
   all_updates = []
 
@@ -370,7 +388,7 @@ def parse_yum_update_list(update_list: list) -> list:
           "package_repo": line[2]
         }
 
-      # Add to our list from before
+      # Add to our list we initialized before
       decorated_list.append(decorated_line)
 
     # Finally, add the hostname and decorated list of updates to our master list
@@ -389,6 +407,7 @@ def parse_yum_update_list(update_list: list) -> list:
 def json_dedupe(update_list: list) -> list:
   """
   This function deduplicates our list of update information by host.
+
   Example input update information:
   [
     {
@@ -402,6 +421,7 @@ def json_dedupe(update_list: list) -> list:
       ]
     }
   ]
+
   Example deduplicated output:
   [
     {
@@ -415,20 +435,26 @@ def json_dedupe(update_list: list) -> list:
     }
   ]
   """
+
   # Initialize some variables
   deduplicated_list = []
 
   # Get all of the update items out of our data
-  master_update_list = [list_item['update_list'] for list_item in update_list]
+  master_update_list = [ list_item['update_list'] for list_item in update_list ]
+
   # Combine the list of updates per hostname into one huge list, including duplicates
-  master_update_list = list(itertools.chain.from_iterable(master_update_list))
-  # Convert every update descriptor object to a string
+  master_update_list = list(
+    itertools.chain.from_iterable(master_update_list)
+  )
+
+  # Convert every update descriptor object to a string,
+  # so that it can be a key in collections.Counter's dictionary
   for index, item in enumerate(master_update_list):
     master_update_list[index] = json.dumps(item)
 
   # Iterate through our list of update objects
-  # collections.Counter is necessary here vs enumerate because it deduplicates
-  # the list before we iterate through it, a la set(<LIST>)
+  # collections.Counter is necessary here, instead of enumerate(), because it deduplicates
+  # the list before we iterate through it, similar to set(<LIST>)
   for update_item in collections.Counter(master_update_list):
 
     # Initialize our list and count of hosts that need the update
@@ -437,8 +463,8 @@ def json_dedupe(update_list: list) -> list:
 
     # Find all entries in our list of host/update information
     # that contain the current update we're working on
-    dupe_entries = [list_item for list_item in update_list
-                    if json.loads(update_item) in list_item['update_list']]
+    dupe_entries = [ list_item for list_item in update_list
+                      if json.loads(update_item) in list_item['update_list'] ]
 
     # Iterate through the list to find all hosts that
     # require the same update, appending to our list initialized above
@@ -468,7 +494,7 @@ def create_multipart_message(
     title: str,
     text: str = None,
     html: str = None,
-    attachments: list = None) -> MIMEMultipart:
+    attachments: list = None) -> email.mime.multipart.MIMEMultipart:
   """
   From: https://stackoverflow.com/questions/42998170/how-to-send-html-text-and-attachment-using-boto3-send-email-or-send-raw-email # pylint: disable=line-too-long
   Creates a MIME multipart message object.
@@ -484,8 +510,9 @@ def create_multipart_message(
   :param attachments: List of files to attach in the email.
   :return: A `MIMEMultipart` to be used to send the email.
   """
+
   multipart_content_subtype = 'alternative' if text and html else 'mixed'
-  msg = MIMEMultipart(multipart_content_subtype)
+  msg = email.mime.multipart.MIMEMultipart(multipart_content_subtype)
   msg['Subject'] = title
   msg['From'] = sender
   msg['To'] = receiver
@@ -494,16 +521,16 @@ def create_multipart_message(
   # According to RFC 2046, the last part of a multipart message,
   # in this case the HTML message, is best and preferred.
   if text:
-    part = MIMEText(text, 'plain')
+    part = email.mime.text.MIMEText(text, 'plain')
     msg.attach(part)
   if html:
-    part = MIMEText(html, 'html')
+    part = email.mime.text.MIMEText(html, 'html')
     msg.attach(part)
 
     # Add attachments
   for attachment in attachments or []:
     with open(attachment, 'rb') as file_to_attach:
-      part = MIMEApplication(file_to_attach.read())
+      part = email.mime.application.MIMEApplication(file_to_attach.read())
       part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment))
       msg.attach(part)
 
@@ -516,10 +543,10 @@ def send_mail(
     smtp_port: int,
     smtp_username: str,
     smtp_password: str,
-    message: MIMEMultipart
+    message: email.mime.multipart.MIMEMultipart
   ):
   """
-  Send email to receiver via SMTP SSL
+  Send a pre-created MIMEMultipart message via SMTP SSL
   """
 
   # Create a secure SSL context
@@ -546,7 +573,7 @@ def main():
     help="Path to the config file"
   )
   args = parser.parse_args()
-  
+
   # Parse our config
   if "config" in args:
     config = get_config(args.config)
@@ -616,7 +643,7 @@ def main():
     email_body,
     email_attachments
   )
-  
+
   # Send the email
   send_mail(
     config["smtp"]["server"],
