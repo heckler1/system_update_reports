@@ -502,7 +502,7 @@ def main():
     email_body,
     email_attachments
   )
-
+  
   # Send the email
   send_mail(smtp_server, smtp_port, smtp_username, smtp_password, message)
 
