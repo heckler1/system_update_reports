@@ -7,13 +7,15 @@ See the README for more information, including configuration instructions.
 import argparse
 import collections
 import datetime
-import email
 import itertools
 import json
 import os
 import re
 import smtplib
 import ssl
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 import fabric
 import paramiko
@@ -494,7 +496,7 @@ def create_multipart_message(
     title: str,
     text: str = None,
     html: str = None,
-    attachments: list = None) -> email.mime.multipart.MIMEMultipart:
+    attachments: list = None) -> MIMEMultipart:
   """
   From: https://stackoverflow.com/questions/42998170/how-to-send-html-text-and-attachment-using-boto3-send-email-or-send-raw-email # pylint: disable=line-too-long
   Creates a MIME multipart message object.
@@ -512,7 +514,7 @@ def create_multipart_message(
   """
 
   multipart_content_subtype = 'alternative' if text and html else 'mixed'
-  msg = email.mime.multipart.MIMEMultipart(multipart_content_subtype)
+  msg = MIMEMultipart(multipart_content_subtype)
   msg['Subject'] = title
   msg['From'] = sender
   msg['To'] = receiver
@@ -521,16 +523,16 @@ def create_multipart_message(
   # According to RFC 2046, the last part of a multipart message,
   # in this case the HTML message, is best and preferred.
   if text:
-    part = email.mime.text.MIMEText(text, 'plain')
+    part = MIMEText(text, 'plain')
     msg.attach(part)
   if html:
-    part = email.mime.text.MIMEText(html, 'html')
+    part = MIMEText(html, 'html')
     msg.attach(part)
 
     # Add attachments
   for attachment in attachments or []:
     with open(attachment, 'rb') as file_to_attach:
-      part = email.mime.application.MIMEApplication(file_to_attach.read())
+      part = MIMEApplication(file_to_attach.read())
       part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(attachment))
       msg.attach(part)
 
@@ -543,7 +545,7 @@ def send_mail(
     smtp_port: int,
     smtp_username: str,
     smtp_password: str,
-    message: email.mime.multipart.MIMEMultipart
+    message: MIMEMultipart
   ):
   """
   Send a pre-created MIMEMultipart message via SMTP SSL
