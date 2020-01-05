@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import smtplib
 import ssl
+import paramiko
 import fabric
 
 ##########
@@ -92,7 +93,11 @@ def yum_update_filter(output: list) -> list:
 
 ####################################################################################################
 
-def check_updates(server_list: list, package_manager: str, key_path: str) -> list:
+def check_updates(
+  server_list: list,
+  package_manager: str,
+  private_key: paramiko.PKey,
+  username: str) -> list:
   """
   This function logs into each of the given list of servers
   and checks to see if there are any updates required.
@@ -128,7 +133,7 @@ def check_updates(server_list: list, package_manager: str, key_path: str) -> lis
   for server in server_list:
     # Login and run our command that checks for updates
     try:
-      update_list = fabric.Connection(server, connect_kwargs={"key_filename": key_path}).run(**command_kwargs)
+      update_list = fabric.Connection(server, user=username, connect_kwargs={"pkey": private_key}).run(**command_kwargs)
     except Exception as exception:
       # TODO: add a more useful failure message, like an email or something
       print(f"Failed to get {package_manager} update list for {server}")
@@ -435,9 +440,22 @@ def main():
   with open(config_file_path, 'r') as config:
     config = yaml.safe_load(config)
 
+  # Load our private key as an RSA key object
+  private_key = paramiko.RSAKey.from_private_key_file(filename=config["ssh"]["key_path"])
+
   # Check our servers for updates
-  apt_updates = check_updates(config["apt_servers"], "apt", config["private_key"])
-  yum_updates = check_updates(config["yum_servers"], "yum", config["private_key"])
+  apt_updates = check_updates(
+    server_list=config["apt_servers"],
+    package_manager="apt",
+    username=config["ssh"]["username"],
+    private_key=private_key
+  )
+  yum_updates = check_updates(
+    server_list=config["yum_servers"],
+    package_manager="yum",
+    username=config["ssh"]["username"],
+    private_key=private_key
+  )
 
   # Parse our package manager-specific output into our common structured format
   apt_updates = parse_apt_update_list(apt_updates)
