@@ -85,7 +85,7 @@ def yum_update_filter(output: list) -> list:
     if (re.match(r"^Loaded plugins: ", line) \
       or re.match(r"^Loading mirror speeds from cached hostfile$", line) \
       or re.match(r"^ \*", line) \
-      or re.match(r"^Determining fastest mirrors")) is not None:
+      or re.match(r"^Determining fastest mirrors", line)) is not None:
 
       output.pop(index)
 
