@@ -48,7 +48,7 @@ The names of the environment variables are as follows:
 - `SSH_USER`
   - SSH username to use to login to the target systems
 - `SSH_KEY_PATH`
-  - Path to an SSH private key associated with the given user
+  - Path to an SSH private key associated with the given user. Must point to a valid RSA key.
 - `APT_SERVERS` and/or `YUM_SERVERS`
   - A JSON-parseable list of server hostnames
   - Example: `[ "server1", "server2.example.com" ]`
