@@ -726,7 +726,7 @@ def main():
     deduplicated_yum_updates = dedupe_by_host(yum_updates)
 
     # Deduplicate again, this time by updates per set of hosts
-    deduplicated_yum_updates = dedupe_by_update_list(deduplicated_apt_updates)
+    deduplicated_yum_updates = dedupe_by_update_list(deduplicated_yum_updates)
 
   # Combine the deduplicated sets
   all_updates = deduplicated_apt_updates + deduplicated_yum_updates
