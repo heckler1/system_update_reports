@@ -6,6 +6,8 @@ It works by performing the following high-level steps:
 - SSH into a given list of servers, and run the appropriate command for that server's package manger to check for package updates
 - Parse the output of the commands into a JSON structure
 - Deduplicate that dictionary based on package type, creating a list of hosts that need each package update.
+- Deduplicate again, this time by set of hosts that need a given update.
+- Email the report to the given address over SMTP SSL
 
 Example dedupliated JSON:
 ``` json
