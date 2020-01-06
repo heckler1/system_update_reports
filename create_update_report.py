@@ -115,27 +115,6 @@ def get_config(config_file_path: str = None) -> dict:
   else:
     raise Exception("Unable to find SSH key path")
 
-  ## GET SERVER LISTS ##
-  if "YUM_SERVERS" in os.environ:
-    try:
-      yum_servers = json.loads(os.environ["YUM_SERVERS"])
-    except:
-      raise Exception("Unable to parse YUM_SERVERS environment variable as JSON list")
-  elif "yum_servers" in config_file:
-    yum_servers = config_file["yum_servers"]
-  else:
-    print("No Yum servers found")
-
-  if "APT_SERVERS" in os.environ:
-    try:
-      apt_servers = json.loads(os.environ["APT_SERVERS"])
-    except:
-      raise Exception("Unable to parse APT_SERVERS environment variable as JSON list")
-  elif "apt_servers" in config_file:
-    apt_servers = config_file["apt_servers"]
-  else:
-    print("No Apt servers found")
-
   # Build out our config dictionary
   config_dict = {
     "email": {
@@ -151,10 +130,29 @@ def get_config(config_file_path: str = None) -> dict:
     "ssh": {
       "username": ssh_username,
       "key_path": ssh_key_path
-    },
-    "apt_servers": apt_servers,
-    "yum_servers": yum_servers
+    }
   }
+
+  ## GET SERVER LISTS ##
+  if "YUM_SERVERS" in os.environ:
+    try:
+      config_dict["yum_servers"] = json.loads(os.environ["YUM_SERVERS"])
+    except:
+      raise Exception("Unable to parse YUM_SERVERS environment variable as JSON list")
+  elif "yum_servers" in config_file:
+    config_dict["yum_servers"] = config_file["yum_servers"]
+  else:
+    print("No Yum servers found")
+
+  if "APT_SERVERS" in os.environ:
+    try:
+      config_dict["apt_servers"] = json.loads(os.environ["APT_SERVERS"])
+    except:
+      raise Exception("Unable to parse APT_SERVERS environment variable as JSON list")
+  elif "apt_servers" in config_file:
+    config_dict["apt_servers"] = config_file["apt_servers"]
+  else:
+    print("No Apt servers found")
 
   return config_dict
 
@@ -406,9 +404,9 @@ def parse_yum_update_list(update_list: list) -> list:
 
 ####################################################################################################
 
-def json_dedupe(update_list: list) -> list:
+def dedupe_by_host(update_list: list) -> list:
   """
-  This function deduplicates our list of update information by host.
+  This function deduplicates our list of update information by hosts that need a given update.
 
   Example input update information:
   [
@@ -483,6 +481,115 @@ def json_dedupe(update_list: list) -> list:
         "update_item":json.loads(update_item),
         "hostnames": hostname_list,
         "host_count": host_count
+      }
+    )
+
+  return deduplicated_list
+
+####################################################################################################
+
+def dedupe_by_update_list(update_list: list) -> list:
+  """
+  This function deduplicates our list of update information by updates needed by a given set of hosts.
+
+  Example input update information:
+  {
+    "update_item": {
+      "package_name": "dmsetup",
+      "package_version": "2:1.02.145-4.1ubuntu3.18.04.2",
+      "package_repo": "bionic-updates"
+    },
+    "hostnames": [
+      "k3s-master",
+      "k3s-node1",
+      "k3s-node2",
+      "k3s-node3"
+    ],
+    "host_count": 4
+  },
+  {
+    "update_item": {
+      "package_name": "grub-common",
+      "package_version": "2.02-2ubuntu8.14",
+      "package_repo": "bionic-updates"
+    },
+    "hostnames": [
+      "k3s-master",
+      "k3s-node1",
+      "k3s-node2",
+      "k3s-node3"
+    ],
+    "host_count": 4
+  },
+
+  Example deduplicated output:
+  [
+    {
+      "update_list": [
+        {
+          "package_name": "dmsetup",
+          "package_version": "2:1.02.145-4.1ubuntu3.18.04.2",
+          "package_repo": "bionic-updates"
+        },
+        {
+          "package_name": "grub-common",
+          "package_version": "2.02-2ubuntu8.14",
+          "package_repo": "bionic-updates"
+        }
+      ],
+      "update_count": 2,
+      "hostnames": [
+        "k3s-master",
+        "k3s-node1",
+        "k3s-node2",
+        "k3s-node3"
+      ],
+      "host_count": 4
+    }
+  ]
+  """
+
+  # Initialize some variables
+  deduplicated_list = []
+
+  # Get all of the sets of hostnames out of our data
+  master_host_list = [ list_item['hostnames'] for list_item in update_list ]
+
+  # Convert every hostname list to a string,
+  # so that it can be a key in collections.Counter's dictionary
+  for index, item in enumerate(master_host_list):
+    master_host_list[index] = json.dumps(item)
+
+  # Iterate through our list of hostname lists
+  # collections.Counter is necessary here, instead of enumerate(), because it deduplicates
+  # the list before we iterate through it, similar to set(<LIST>)
+  for hostname_list_item in collections.Counter(master_host_list):
+
+    # Initialize our list and count of updates that this set of hosts needs
+    update_item_list = []
+    update_item_count = 0
+
+    # Find all entries in our list of host/update information
+    # that contain the current set of hosts we're working on
+    dupe_entries = [ list_item for list_item in update_list
+                      if json.loads(hostname_list_item) == list_item['hostnames'] ]
+
+    # Iterate through the list to find all sets of hosts that
+    # require the same update, appending to our list initialized above
+    for _, entry in enumerate(dupe_entries):
+      # Log any update that this set of hosts needs
+      if entry["update_item"] not in update_item_list:
+        update_item_list.append(entry["update_item"])
+        update_item_count += 1
+
+    # Append the list of updates, plus the hosts that need them
+    # to our master list of de-duplicated updates
+    deduplicated_list.append(
+      {
+        "update_list": update_item_list,
+        "update_count": update_item_count,
+        "hostnames": json.loads(hostname_list_item),
+        "host_count": len(json.loads(hostname_list_item))
       }
     )
 
@@ -585,27 +692,41 @@ def main():
   # Load our private key as an RSA key object
   private_key = paramiko.RSAKey.from_private_key_file(filename=config["ssh"]["key_path"])
 
+  # Initialize our lists of updates
+  deduplicated_apt_updates = []
+  deduplicated_yum_updates = []
+
   # Check our servers for updates
-  apt_updates = check_updates(
-    server_list=config["apt_servers"],
-    package_manager="apt",
-    username=config["ssh"]["username"],
-    private_key=private_key
-  )
-  yum_updates = check_updates(
-    server_list=config["yum_servers"],
-    package_manager="yum",
-    username=config["ssh"]["username"],
-    private_key=private_key
-  )
+  if "apt_servers" in config:
+    apt_updates = check_updates(
+      server_list=config["apt_servers"],
+      package_manager="apt",
+      username=config["ssh"]["username"],
+      private_key=private_key
+    )
+    # Parse our package manager-specific output into our common structured format
+    apt_updates = parse_apt_update_list(apt_updates)
 
-  # Parse our package manager-specific output into our common structured format
-  apt_updates = parse_apt_update_list(apt_updates)
-  yum_updates = parse_yum_update_list(yum_updates)
+    # Deduplicate by hosts per update
+    deduplicated_apt_updates = dedupe_by_host(apt_updates)
 
-  # Deduplicate seperately since they won't have updates in common
-  deduplicated_apt_updates = json_dedupe(apt_updates)
-  deduplicated_yum_updates = json_dedupe(yum_updates)
+    # Deduplicate again, this time by updates per set of hosts
+    deduplicated_apt_updates = dedupe_by_update_list(deduplicated_apt_updates)
+
+  if "yum_servers" in config:
+    yum_updates = check_updates(
+      server_list=config["yum_servers"],
+      package_manager="yum",
+      username=config["ssh"]["username"],
+      private_key=private_key
+    )
+    # Parse our package manager-specific output into our common structured format
+    yum_updates = parse_yum_update_list(yum_updates)
+    # Deduplicate 
+    deduplicated_yum_updates = dedupe_by_host(yum_updates)
+
+    # Deduplicate again, this time by updates per set of hosts
+    deduplicated_yum_updates = dedupe_by_update_list(deduplicated_apt_updates)
 
   # Combine the deduplicated sets
   all_updates = deduplicated_apt_updates + deduplicated_yum_updates
