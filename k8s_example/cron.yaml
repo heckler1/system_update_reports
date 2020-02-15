@@ -4,7 +4,7 @@ metadata:
   name: system-update-reports
   namespace: default
 spec:
-  schedule: "0 1 * * *"
+  schedule: "0 1 * * 6"
   jobTemplate:
     spec:
       template:
